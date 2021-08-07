@@ -1,7 +1,12 @@
+use std::path::Path;
+
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    input::mouse::MouseWheel,
     math::Quat,
     prelude::*,
+    render::camera::{Camera, OrthographicProjection},
+    window::{WindowId, WindowResized},
 };
 
 use rand::Rng;
@@ -14,7 +19,8 @@ enum Direction {
 }
 struct RotationRate(f32);
 
-const CAMERA_SPEED: f32 = 1000.0;
+const CAMERA_SPEED: f32 = 10.0;
+const SCALE_FACTOR: f32 = 0.025;
 
 fn main() {
     App::build()
@@ -29,6 +35,7 @@ fn main() {
         .add_system(tick.system().label("Tick"))
         .add_system(rotate_entity.system().after("Tick").label("Game"))
         .add_system(move_camera.system().after("Game"))
+        .add_system(zoom_camera.system().after("Game"))
         .run()
 }
 
@@ -42,10 +49,11 @@ fn setup(
     let tile_size = Vec2::splat(64.0);
     let map_size = Vec2::splat(320.0);
 
-    let half_x = (map_size.x / 8.0) as i32;
-    let half_y = (map_size.y / 8.0) as i32;
+    let half_x = (map_size.x / 32.0) as i32;
+    let half_y = (map_size.y / 32.0) as i32;
 
-    let sprite_handle = materials.add(assets.load("branding/icon.png").into());
+    let sprite_path = Path::new("branding").join("icon.png");
+    let sprite_handle = materials.add(assets.load(sprite_path).into());
 
     commands
         .spawn()
@@ -95,7 +103,7 @@ fn rotate_entity(time: Res<Time>, mut query: Query<(&mut Transform, &Direction, 
     }
 }
 
-fn move_camera(time: Res<Time>, mut query: Query<(&mut Transform, &mut Position)>) {
+fn move_camera(time: Res<Time>, mut query: Query<(&mut Transform, &mut Position), With<Camera>>) {
     for (mut transform, mut position) in query.iter_mut() {
         position
             .0
@@ -104,6 +112,28 @@ fn move_camera(time: Res<Time>, mut query: Query<(&mut Transform, &mut Position)
             position.0 * Transform::from_translation(Vec3::X * CAMERA_SPEED * time.delta_seconds());
         transform.translation = position.0.translation;
         transform.rotation *= Quat::from_rotation_z(time.delta_seconds() / 2.0);
+    }
+}
+
+fn zoom_camera(
+    windows: Res<Windows>,
+    mut projection_query: Query<&mut OrthographicProjection>,
+    mut mouse_wheel_events: EventReader<MouseWheel>,
+    mut window_resized: EventWriter<WindowResized>,
+) {
+    for event in mouse_wheel_events.iter() {
+        for mut projection in projection_query.iter_mut() {
+            projection.scale = (projection.scale - event.y * SCALE_FACTOR)
+                .max(0.1)
+                .min(1.0);
+
+            let window = windows.get_primary().unwrap();
+            window_resized.send(WindowResized {
+                id: WindowId::primary(),
+                width: window.width(),
+                height: window.height(),
+            });
+        }
     }
 }
 
